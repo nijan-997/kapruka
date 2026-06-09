@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/ai/apiError";
 import { extractIntent, intentToProfile } from "@/lib/ai/extractIntent";
 
 export async function POST(req: NextRequest) {
@@ -19,10 +20,6 @@ export async function POST(req: NextRequest) {
       ok: true,
     });
   } catch (err) {
-    console.error("[/api/ai/intent]", err);
-    return NextResponse.json(
-      { error: "Intent extraction failed", details: String(err) },
-      { status: 500 }
-    );
+    return aiErrorResponse(err, "Intent extraction failed");
   }
 }

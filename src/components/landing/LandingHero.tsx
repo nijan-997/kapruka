@@ -58,9 +58,10 @@ export function LandingHero() {
           body: JSON.stringify({ message: trimmed }),
         });
 
-        if (!res.ok) throw new Error(`API error ${res.status}`);
-
         const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.details || data.error || `API error ${res.status}`);
+        }
         const { intent, profilePatch } = data;
 
         // Update the store with extracted intent

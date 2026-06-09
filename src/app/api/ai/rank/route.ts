@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/ai/apiError";
 import { rankRecommendations } from "@/lib/ai/rankRecommendations";
 import { searchProducts } from "@/services/commerce/searchProducts";
 import type { ShoppingProfile } from "@/lib/store";
@@ -35,10 +36,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ranking, products, ok: true });
   } catch (err) {
-    console.error("[/api/ai/rank]", err);
-    return NextResponse.json(
-      { error: "Ranking failed", details: String(err) },
-      { status: 500 }
-    );
+    return aiErrorResponse(err, "Ranking failed");
   }
 }

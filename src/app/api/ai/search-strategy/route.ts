@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/ai/apiError";
 import { generateSearchStrategy } from "@/lib/ai/generateSearchQueries";
 import type { ShoppingProfile } from "@/lib/store";
 
@@ -15,10 +16,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ strategy, ok: true });
   } catch (err) {
-    console.error("[/api/ai/search-strategy]", err);
-    return NextResponse.json(
-      { error: "Search strategy generation failed", details: String(err) },
-      { status: 500 }
-    );
+    return aiErrorResponse(err, "Search strategy generation failed");
   }
 }

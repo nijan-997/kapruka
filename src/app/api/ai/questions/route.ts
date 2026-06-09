@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { aiErrorResponse } from "@/lib/ai/apiError";
 import { generateNextQuestion } from "@/lib/ai/generateQuestions";
 import type { ShoppingProfile } from "@/lib/store";
 
@@ -19,10 +20,6 @@ export async function POST(req: NextRequest) {
       ok: true,
     });
   } catch (err) {
-    console.error("[/api/ai/questions]", err);
-    return NextResponse.json(
-      { error: "Question generation failed", details: String(err) },
-      { status: 500 }
-    );
+    return aiErrorResponse(err, "Question generation failed");
   }
 }
