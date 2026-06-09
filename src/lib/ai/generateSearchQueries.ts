@@ -1,5 +1,5 @@
 // server-side only
-import { generateJSON } from "./gemini";
+import { generateJSON } from "./openRouter";
 import type { ShoppingProfile } from "@/lib/store";
 
 export interface SearchStrategy {

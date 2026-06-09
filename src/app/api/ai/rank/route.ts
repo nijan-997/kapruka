@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
       limit: 12,
     });
 
-    // Rank with Gemini
+    // Rank with OpenRouter
     const ranking = await rankRecommendations(profile, products);
 
     return NextResponse.json({ ranking, products, ok: true });
