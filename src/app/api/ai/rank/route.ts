@@ -26,6 +26,7 @@ export async function POST(req: NextRequest) {
     const products = await searchProducts({
       queries,
       priceFilter,
+      categories: strategy?.categories,
       limit: 12,
     });
 

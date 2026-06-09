@@ -1,3 +1,5 @@
+import { checkKaprukaDelivery } from "./kaprukaMcp";
+
 export interface DeliveryCheck {
   available: boolean;
   options: Array<{
@@ -13,7 +15,30 @@ export async function checkDelivery(
   productId: string,
   address?: { city?: string; district?: string }
 ): Promise<DeliveryCheck> {
-  // TODO: Replace with Kapruka MCP delivery availability check
+  const city = address?.city || address?.district;
+
+  if (city) {
+    try {
+      const result = await checkKaprukaDelivery({ city, productId });
+      return {
+        available: result.available,
+        options: [
+          {
+            type: "standard",
+            label: "Kapruka Delivery",
+            estimatedDate: result.available
+              ? result.checked_date
+              : result.next_available_date ?? "Next available date",
+            price: result.rate,
+            available: result.available,
+          },
+        ],
+      };
+    } catch (err) {
+      console.warn("[commerce/checkDelivery] Kapruka MCP unavailable, using mock fallback", err);
+    }
+  }
+
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);

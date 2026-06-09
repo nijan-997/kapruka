@@ -2,7 +2,7 @@
 
 import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
-import { X, ArrowRight, Mic } from "lucide-react";
+import { X, ArrowRight } from "lucide-react";
 
 interface TellMeMoreSheetProps {
   isOpen: boolean;

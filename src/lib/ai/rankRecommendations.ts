@@ -22,13 +22,22 @@ export interface ProductInput {
   id: string;
   name: string;
   price: number;
+  currency?: string;
+  compareAtPrice?: number | null;
   category: string;
   tags: string[];
   rating?: number;
   reviewCount?: number;
   availableToday?: boolean;
   availableTomorrow?: boolean;
+  inStock?: boolean;
+  stockLevel?: string;
   description?: string;
+  summary?: string;
+  imageUrl?: string;
+  url?: string;
+  shipsInternationally?: boolean;
+  source?: "kapruka" | "mock";
 }
 
 const SYSTEM_PROMPT = `

@@ -1,13 +1,13 @@
 // Gemini client — server-side only, never import in client components
 import { GoogleGenerativeAI, GenerativeModel } from "@google/generative-ai";
 
-if (!process.env.GEMINI_API_KEY) {
-  throw new Error("Missing GEMINI_API_KEY environment variable");
-}
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-
 export function getModel(modelName = "gemini-2.5-flash"): GenerativeModel {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("Missing GEMINI_API_KEY environment variable");
+  }
+
+  const genAI = new GoogleGenerativeAI(apiKey);
   return genAI.getGenerativeModel({
     model: modelName,
     generationConfig: {

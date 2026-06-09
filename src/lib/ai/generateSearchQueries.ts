@@ -18,8 +18,10 @@ Given a shopping profile, generate an optimal search strategy to find the best p
 Kapruka categories: gifts, flowers, cakes, electronics, fashion, lifestyle, food, beauty, books, home
 
 RULES:
-- Generate 3-6 diverse search queries, from most specific to most general.
-- Include Sri Lankan context where relevant (e.g., "Sri Lanka delivery", "local brands").
+- Generate 3-6 diverse Kapruka search queries, from most specific to most general.
+- Keep each query short and product-focused: 1-4 words is ideal.
+- Do NOT include generic words like "Sri Lanka", "delivery", "best", "for mother", or "under 5000" in the query text.
+- Put budget into priceFilter only, never into query text.
 - If occasion is birthday, include cake/flower options.
 - If recipient is mother, consider tea sets, sarees, jewelry, spa hampers.
 - If recipient is father, consider gadgets, grooming kits, leather goods.
@@ -42,13 +44,13 @@ SCHEMA:
 EXAMPLES:
 
 Profile: {"shoppingType":"gift","recipient":"mother","occasion":"birthday","budget":"under_5k","budgetMax":5000}
-Output: {"queries":["birthday gift for mother","mothers birthday hamper","flowers for mom","tea gift set","gift basket under 5000"],"categories":["flowers","gifts","food"],"priceFilter":{"min":null,"max":5000},"sortBy":"relevance","reasoning":"Mother birthday gifts with emotional resonance; flowers and hampers are culturally appropriate in Sri Lanka."}
+Output: {"queries":["tea gift","flowers","cake","chocolate hamper","saree"],"categories":["flowers","gifts","food"],"priceFilter":{"min":null,"max":5000},"sortBy":"relevance","reasoning":"Mother birthday gifts with emotional resonance; flowers and hampers are culturally appropriate in Sri Lanka."}
 
 Profile: {"shoppingType":"myself","category":"electronics","budget":"under_5k","budgetMax":5000}
-Output: {"queries":["electronics under 5000","bluetooth speaker","headphones Sri Lanka","smart watch budget"],"categories":["electronics"],"priceFilter":{"min":null,"max":5000},"sortBy":"price_asc","reasoning":"Budget electronics; sorted by price to surface best value options."}
+Output: {"queries":["electronics","bluetooth speaker","headphones","smart watch"],"categories":["electronics"],"priceFilter":{"min":null,"max":5000},"sortBy":"price_asc","reasoning":"Budget electronics; sorted by price to surface best value options."}
 
 Profile: {"shoppingType":"gift","recipient":"partner","occasion":"anniversary","budget":"10k_20k","budgetMin":10000,"budgetMax":20000}
-Output: {"queries":["anniversary gift for partner","romantic gift hamper","jewelry gift","couple spa voucher","premium gift box"],"categories":["gifts","lifestyle","jewelry"],"priceFilter":{"min":10000,"max":20000},"sortBy":"rating","reasoning":"Anniversary gifts should feel romantic and personal; premium range allows for jewelry or experiences."}
+Output: {"queries":["rose bouquet","chocolate hamper","jewelry","spa hamper","premium gift"],"categories":["gifts","lifestyle","jewelry"],"priceFilter":{"min":10000,"max":20000},"sortBy":"rating","reasoning":"Anniversary gifts should feel romantic and personal; premium range allows for jewelry or experiences."}
 `;
 
 export async function generateSearchStrategy(

@@ -50,7 +50,7 @@ export default function MyselfJourneyPage() {
           <h1 className="font-display text-3xl md:text-4xl font-semibold text-[#1a1a18] leading-tight">
             What are you looking for?
           </h1>
-          <p className="mt-2 text-[#6b6b63] text-base">Pick a category and we'll find the best options.</p>
+          <p className="mt-2 text-[#6b6b63] text-base">Pick a category and we&apos;ll find the best options.</p>
         </motion.div>
 
         {/* Categories */}

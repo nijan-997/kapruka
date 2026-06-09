@@ -27,7 +27,10 @@ export function LandingHero() {
   const router = useRouter();
 
   // Avoid SSR hydration mismatch for browser-only APIs
-  useEffect(() => { setMounted(true); }, []);
+  useEffect(() => {
+    const id = window.requestAnimationFrame(() => setMounted(true));
+    return () => window.cancelAnimationFrame(id);
+  }, []);
   const { reset, updateProfile, setIntent, setLoading, setAIError } = useKapiStore();
   const inputRef = useRef<HTMLInputElement>(null);
 

@@ -1,4 +1,5 @@
 import { MOCK_PRODUCTS } from "./mockData";
+import { searchKaprukaProducts } from "./kaprukaMcp";
 import type { ProductInput } from "@/lib/ai/rankRecommendations";
 
 interface SearchOptions {
@@ -33,8 +34,14 @@ function scoreProduct(product: ProductInput, queries: string[]): number {
 }
 
 export async function searchProducts(options: SearchOptions): Promise<ProductInput[]> {
-  // TODO: Replace with Kapruka MCP client call
-  // const results = await kaprukaMCP.searchProducts({ queries, priceFilter });
+  try {
+    const kaprukaResults = await searchKaprukaProducts(options);
+    if (kaprukaResults.length > 0) {
+      return kaprukaResults;
+    }
+  } catch (err) {
+    console.warn("[commerce/searchProducts] Kapruka MCP unavailable, using mock fallback", err);
+  }
 
   const { queries, priceFilter, limit = 12 } = options;
 

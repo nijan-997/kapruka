@@ -1,6 +1,7 @@
 "use client";
 
 import { motion, type Variants } from "framer-motion";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useKapiStore } from "@/lib/store";
 import { Heart, ShoppingBag, RotateCcw, ArrowLeft, SlidersHorizontal, AlertCircle } from "lucide-react";
@@ -152,14 +153,23 @@ export default function RecommendationsPage() {
                 className="bg-white rounded-3xl border border-[#e8e5de] overflow-hidden"
                 style={{ boxShadow: isHero ? "0 4px 24px rgba(26,26,24,0.08)" : "0 1px 4px rgba(26,26,24,0.05)" }}>
 
-                {/* Image placeholder */}
-                <div className={`relative ${isHero ? "h-52" : "h-36"} bg-[#f5f3ee] flex items-center justify-center`}>
-                  <div className="text-center">
-                    <div className="w-14 h-14 rounded-2xl bg-[#e8e5de] mx-auto mb-2 flex items-center justify-center">
-                      <span className="text-2xl opacity-40">🎁</span>
+                <div className={`relative ${isHero ? "h-52" : "h-36"} bg-[#f5f3ee] flex items-center justify-center overflow-hidden`}>
+                  {product?.imageUrl ? (
+                    <Image
+                      src={product.imageUrl}
+                      alt={product.name}
+                      fill
+                      sizes="(max-width: 768px) 100vw, 576px"
+                      className="object-cover"
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <div className="w-14 h-14 rounded-2xl bg-[#e8e5de] mx-auto mb-2 flex items-center justify-center">
+                        <span className="text-2xl opacity-40">🎁</span>
+                      </div>
+                      <p className="text-xs text-[#9b9b90]">{product ? product.name.slice(0, 28) : "Product image"}</p>
                     </div>
-                    <p className="text-xs text-[#9b9b90]">{product ? product.name.slice(0, 28) : "Product image"}</p>
-                  </div>
+                  )}
 
                   {/* Badge */}
                   <div className="absolute top-3 left-3">
@@ -195,7 +205,7 @@ export default function RecommendationsPage() {
                     </div>
                     <div className="flex-shrink-0">
                       <span className="text-xs font-medium text-[#7a9e7e] bg-[#f0f5f0] px-2.5 py-1 rounded-full border border-[#c8deca]">
-                        {product?.availableToday ? "Available today" : product?.availableTomorrow ? "Tomorrow" : "Available"}
+                        {product?.inStock || product?.availableToday ? "In stock" : product?.availableTomorrow ? "Tomorrow" : "Available"}
                       </span>
                     </div>
                   </div>
@@ -242,11 +252,18 @@ export default function RecommendationsPage() {
                       <ShoppingBag className="w-4 h-4" />
                       {isHero ? "Order This" : "Choose This"}
                     </motion.button>
-                    <motion.button
+                    <motion.a
+                      href={product?.url ?? "#"}
+                      target={product?.url ? "_blank" : undefined}
+                      rel={product?.url ? "noreferrer" : undefined}
                       whileHover={{ y: -1 }} whileTap={{ scale: 0.98 }}
-                      className="px-4 py-3 bg-white border border-[#e8e5de] hover:border-[#a8c5ab] rounded-2xl text-[#6b6b63] hover:text-[#1a1a18] text-sm transition-all">
+                      className={`px-4 py-3 bg-white border border-[#e8e5de] rounded-2xl text-sm transition-all ${
+                        product?.url
+                          ? "hover:border-[#a8c5ab] text-[#6b6b63] hover:text-[#1a1a18]"
+                          : "pointer-events-none text-[#c8c5bd]"
+                      }`}>
                       Details
-                    </motion.button>
+                    </motion.a>
                   </div>
                 </div>
               </motion.div>
@@ -268,8 +285,18 @@ export default function RecommendationsPage() {
                     onClick={() => router.push("/checkout")}
                     className="bg-white rounded-2xl border border-[#e8e5de] p-4 cursor-pointer hover:border-[#a8c5ab] transition-colors text-left"
                     style={{ boxShadow: "0 1px 3px rgba(26,26,24,0.04)" }}>
-                    <div className="h-24 bg-[#f5f3ee] rounded-xl mb-3 flex items-center justify-center">
-                      <span className="text-xl opacity-40">🎁</span>
+                    <div className="relative h-24 bg-[#f5f3ee] rounded-xl mb-3 flex items-center justify-center overflow-hidden">
+                      {product?.imageUrl ? (
+                        <Image
+                          src={product.imageUrl}
+                          alt={product.name}
+                          fill
+                          sizes="(max-width: 768px) 50vw, 260px"
+                          className="object-cover"
+                        />
+                      ) : (
+                        <span className="text-xl opacity-40">🎁</span>
+                      )}
                     </div>
                     {product ? (
                       <>

@@ -13,6 +13,7 @@ const cards = [
     href: "/journey/gift",
     accent: "hover:border-[#d4785a]/30 hover:bg-[#fdf7f4]",
     dot: "bg-[#e8b49a]",
+    floatDelay: 0.15,
   },
   {
     type: "myself" as const,
@@ -22,6 +23,7 @@ const cards = [
     href: "/journey/myself",
     accent: "hover:border-[#7a9e7e]/30 hover:bg-[#f5f9f5]",
     dot: "bg-[#a8c5ab]",
+    floatDelay: 0.85,
   },
   {
     type: "inspire" as const,
@@ -31,6 +33,7 @@ const cards = [
     href: "/journey/inspire",
     accent: "hover:border-[#c49a3c]/30 hover:bg-[#fdf9f0]",
     dot: "bg-[#e4c06e]",
+    floatDelay: 1.45,
   },
 ];
 
@@ -89,7 +92,7 @@ export function GuidedEntryCards() {
             <motion.span
               className="text-2xl mb-3 block"
               animate={{ y: [0, -3, 0] }}
-              transition={{ duration: 3, repeat: Infinity, delay: Math.random() * 2, ease: "easeInOut" }}
+              transition={{ duration: 3, repeat: Infinity, delay: card.floatDelay, ease: "easeInOut" }}
             >
               {card.emoji}
             </motion.span>
