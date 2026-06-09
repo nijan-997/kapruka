@@ -290,22 +290,25 @@ function toProductInput(product: KaprukaSearchProduct): ProductInput | null {
   };
 }
 
-export async function searchKaprukaProducts(
-  options: KaprukaSearchOptions
-): Promise<ProductInput[]> {
-  const limit = options.limit ?? 12;
+export interface PerQuerySearchResult {
+  query: string;
+  products: ProductInput[];
+}
+
+export async function searchKaprukaProductsPerQuery(
+  options: KaprukaSearchOptions & { perQueryLimit?: number }
+): Promise<PerQuerySearchResult[]> {
+  const perQueryLimit = options.perQueryLimit ?? 8;
   const queryCandidates = buildQueryCandidates(options);
-  const products = new Map<string, ProductInput>();
+  const results: PerQuerySearchResult[] = [];
 
   for (const q of queryCandidates) {
-    if (products.size >= limit) break;
-
     try {
       const response = await callKaprukaTool<KaprukaSearchResponse>(
         "kapruka_search_products",
         {
           q,
-          limit: Math.min(12, Math.max(limit, 6)),
+          limit: perQueryLimit,
           currency: "LKR",
           min_price: options.priceFilter?.min ?? null,
           max_price: options.priceFilter?.max ?? null,
@@ -316,15 +319,35 @@ export async function searchKaprukaProducts(
         }
       );
 
+      const products: ProductInput[] = [];
       for (const result of response.results ?? []) {
         const product = toProductInput(result);
-        if (product && !products.has(product.id)) {
-          products.set(product.id, product);
-        }
+        if (product) products.push(product);
       }
+      results.push({ query: q, products });
     } catch {
-      // Try the next AI-generated query; some valid broad phrases return no MCP results.
+      results.push({ query: q, products: [] });
     }
+  }
+
+  return results;
+}
+
+export async function searchKaprukaProducts(
+  options: KaprukaSearchOptions
+): Promise<ProductInput[]> {
+  const limit = options.limit ?? 12;
+  const perQuery = await searchKaprukaProductsPerQuery({
+    ...options,
+    perQueryLimit: Math.min(12, Math.max(limit, 6)),
+  });
+
+  const products = new Map<string, ProductInput>();
+  for (const { products: batch } of perQuery) {
+    for (const product of batch) {
+      if (!products.has(product.id)) products.set(product.id, product);
+    }
+    if (products.size >= limit) break;
   }
 
   return Array.from(products.values()).slice(0, limit);

@@ -45,8 +45,8 @@ export default function LoadingPage() {
         });
 
         if (!rankRes.ok) throw new Error("Ranking failed");
-        const { ranking, products } = await rankRes.json();
-        setRanking(ranking, products);
+        const { ranking, products, retrievalDebug, relevanceScores } = await rankRes.json();
+        setRanking(ranking, products, retrievalDebug ?? null, relevanceScores ?? []);
 
         // Step 4: Almost ready
         setStep(4);

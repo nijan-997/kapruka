@@ -2,8 +2,9 @@ import { create } from "zustand";
 import type { ExtractedIntent } from "@/lib/ai/extractIntent";
 import type { NextQuestion } from "@/lib/ai/generateQuestions";
 import type { SearchStrategy } from "@/lib/ai/generateSearchQueries";
-import type { RankingResult } from "@/lib/ai/rankRecommendations";
-import type { ProductInput } from "@/lib/ai/rankRecommendations";
+import type { RankingResult, ProductInput } from "@/lib/ai/rankRecommendations";
+import type { ProductRelevanceScore } from "@/lib/ai/scoreProductRelevance";
+import type { RetrievalDebug } from "@/services/commerce/retrievalTypes";
 
 // ─── Shopping Profile ────────────────────────────────────────────────────────
 export interface ShoppingProfile {
@@ -32,6 +33,8 @@ export interface AIState {
   searchStrategy: SearchStrategy | null;
   ranking: RankingResult | null;
   products: ProductInput[];
+  retrievalDebug: RetrievalDebug | null;
+  relevanceScores: ProductRelevanceScore[];
   error: string | null;
   missingInformation: string[];
 }
@@ -53,7 +56,12 @@ export interface KapiStore {
   setIntent: (intent: ExtractedIntent) => void;
   setNextQuestion: (q: NextQuestion | null) => void;
   setSearchStrategy: (s: SearchStrategy) => void;
-  setRanking: (r: RankingResult, products: ProductInput[]) => void;
+  setRanking: (
+    r: RankingResult,
+    products: ProductInput[],
+    retrievalDebug?: RetrievalDebug | null,
+    relevanceScores?: ProductRelevanceScore[]
+  ) => void;
   setAIError: (err: string | null) => void;
 
   // Reset
@@ -85,6 +93,8 @@ const defaultAI: AIState = {
   searchStrategy: null,
   ranking: null,
   products: [],
+  retrievalDebug: null,
+  relevanceScores: [],
   error: null,
   missingInformation: [],
 };
@@ -135,8 +145,10 @@ export const useKapiStore = create<KapiStore>()((set) => ({
   setSearchStrategy: (strategy) =>
     set((s) => ({ ai: { ...s.ai, searchStrategy: strategy } })),
 
-  setRanking: (ranking, products) =>
-    set((s) => ({ ai: { ...s.ai, ranking, products } })),
+  setRanking: (ranking, products, retrievalDebug = null, relevanceScores = []) =>
+    set((s) => ({
+      ai: { ...s.ai, ranking, products, retrievalDebug, relevanceScores },
+    })),
 
   setAIError: (err) =>
     set((s) => ({ ai: { ...s.ai, error: err } })),

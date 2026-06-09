@@ -202,6 +202,81 @@ export function DebugPanel() {
                   )}
                 </Section>
 
+                {/* Retrieval Pipeline */}
+                <Section title="Retrieval Pipeline">
+                  {ai.retrievalDebug ? (
+                    <>
+                      <Row label="Generated Queries" value={ai.retrievalDebug.generatedQueries} />
+                      <Row
+                        label="Products Per Query"
+                        value={ai.retrievalDebug.productsPerQuery.map(
+                          (q) => `${q.query}: ${q.count}`
+                        )}
+                      />
+                      <Row label="Merged Count" value={ai.retrievalDebug.mergedCount} />
+                      <Row label="Deduplicated Count" value={ai.retrievalDebug.deduplicatedCount} />
+                      <Row label="Filtered Count" value={ai.retrievalDebug.filteredCount} />
+                      <Row label="Rejected Count" value={ai.retrievalDebug.rejectedCount} />
+                      <Row label="Final Candidates" value={ai.retrievalDebug.finalCandidateCount} />
+                      {ai.retrievalDebug.keywordRejections.length > 0 && (
+                        <Row
+                          label="Keyword Rejections"
+                          value={ai.retrievalDebug.keywordRejections.map(
+                            (r) => `${r.product.name} — ${r.reason}`
+                          )}
+                        />
+                      )}
+                      {ai.retrievalDebug.budgetRejections.length > 0 && (
+                        <Row
+                          label="Budget Rejections"
+                          value={ai.retrievalDebug.budgetRejections.map(
+                            (r) => `${r.product.name} — ${r.reason}`
+                          )}
+                        />
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">No retrieval data yet.</p>
+                  )}
+                </Section>
+
+                {/* Relevance Scores */}
+                <Section title="Relevance Scores">
+                  {ai.relevanceScores.length > 0 ? (
+                    <div className="space-y-2 py-1">
+                      {ai.relevanceScores.map((s) => {
+                        const product = ai.products.find((p) => p.id === s.productId);
+                        const name =
+                          product?.name ??
+                          ai.retrievalDebug?.keywordRejections.find(
+                            (r) => r.product.id === s.productId
+                          )?.product.name ??
+                          s.productId;
+                        return (
+                          <div
+                            key={s.productId}
+                            className={`text-xs py-1.5 px-2 rounded-lg border ${
+                              s.rejected
+                                ? "bg-red-50 border-red-100 text-red-700"
+                                : "bg-green-50 border-green-100 text-green-800"
+                            }`}
+                          >
+                            <div className="font-medium truncate">{name}</div>
+                            <div className="mt-0.5">
+                              Score: {s.score} · {s.rejected ? "Rejected" : "Accepted"}
+                            </div>
+                            {s.reasons.length > 0 && (
+                              <div className="mt-0.5 text-[10px] opacity-80">{s.reasons.join(" · ")}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">No relevance scores yet.</p>
+                  )}
+                </Section>
+
                 {/* Recommendation Output */}
                 <Section title="Recommendation Output">
                   {ai.ranking ? (
