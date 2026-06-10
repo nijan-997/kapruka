@@ -4,7 +4,7 @@ import { BANNED_KEYWORDS, BUDGET_TOLERANCE_RATIO } from "./retrievalConfig";
 export interface FilterRejection {
   product: ProductInput;
   reason: string;
-  stage: "keyword" | "budget";
+  stage: "keyword" | "budget" | "compatibility";
 }
 
 function productHaystack(product: ProductInput): string {

@@ -1,70 +1,218 @@
 // server-side only
 import { generateJSON } from "./openRouter";
 import type { ShoppingProfile } from "@/lib/store";
+import { budgetOptions } from "@/lib/data";
+import {
+  computeProfileConfidence,
+  hasBudget,
+  isPreBudgetComplete,
+  isReadyForRecommendations,
+} from "@/lib/confidence";
+import {
+  buildAgeGroupQuestion,
+  buildGenderQuestion,
+  buildRecipientPersona,
+  getAutoPersonaPatch,
+  getNextPersonaQuestion,
+} from "@/lib/persona/recipientPersona";
 
-export interface NextQuestion {
+export interface PredictedAnswer {
+  id: string;
+  emoji?: string;
+  label: string;
+  value: string;
+}
+
+export interface DynamicQuestion {
   field: string;
   question: string;
-  type: "single_select" | "multi_select" | "text" | "budget" | "date";
-  options?: Array<{ id: string; emoji?: string; label: string; sublabel?: string }>;
+  type: "pills" | "budget" | "multi";
+  predictedAnswers: PredictedAnswer[];
+  confidence: number;
   hint?: string;
-  isRequired: boolean;
+}
+
+export interface QuestionResponse {
+  question: DynamicQuestion | null;
+  confidence: number;
+  ready: boolean;
+  personaPatch?: Partial<ShoppingProfile>;
 }
 
 const SYSTEM_PROMPT = `
-You are Kapi's shopping question engine for Kapruka, Sri Lanka.
+You are Kapi, an emotionally intelligent AI shopping concierge for Kapruka, Sri Lanka.
 
-Given a shopping profile with some fields filled, determine the SINGLE most important missing piece of information needed to make a good product recommendation.
+Given a partial shopping profile, determine the SINGLE most valuable missing piece of information right now.
+Never ask about something already present in the profile.
+
+IMPORTANT: NEVER ask about budget or price. Budget is always asked last by the system separately.
+IMPORTANT: NEVER ask about gender or ageGroup — the persona engine handles those separately.
+
+GIFT MODE fields (priority order — budget and persona excluded):
+recipient → relationship → occasion → emotionalGoal → interests
+
+MYSELF MODE fields (priority order — budget excluded):
+category → goal → priority → urgency
 
 RULES:
-- Ask for ONLY ONE thing at a time.
-- NEVER ask for something already in the profile.
-- For "gift" type: priority order is recipient → occasion → budget → deliveryDate → interests.
-- For "myself" type: priority order is category → budget → deliveryDate.
-- For "search" type: determine what's most critical.
-- If all essential info is present, return null (ready to search).
+- Ask ONE warm, human question at a time. Never clinical.
+- Generate 4-6 contextual predictedAnswers as clickable pills with emoji + label + value.
+- ALWAYS include as the last pill: {"id":"something_else","emoji":"✨","label":"Something Else","value":"custom"}
+- NEVER use field "budget" — the system handles budget as the final mandatory question.
+- NEVER use fields "gender" or "ageGroup".
+- predictedAnswers must be specific to the profile context — NEVER use a generic universal list.
+- Use recipient persona (gender, ageGroup) when present to tailor pill suggestions.
+- For boss/colleague: suggest professional, executive, travel, office-themed answers when relevant.
+- For partner/mother: suggest emotional, romantic, thoughtful answers.
+- For myself electronics: suggest performance, battery, value, premium answers.
+- If all non-budget fields are complete, return {"ready": true} — budget will follow automatically.
 
-AVAILABLE FIELDS WITH OPTIONS:
-
-recipient options: mother, father, partner, friend, child, colleague, client, teacher
-occasion options: birthday, anniversary, graduation, wedding, housewarming, thank_you, just_because, festival, new_baby, farewell
-budget options: under_2500, under_5k, 5k_10k, 10k_20k, 20k_plus
-deliveryDate options: today, tomorrow, this_week, flexible
-category options (for myself): electronics, flowers, cakes, fashion, lifestyle, home, food, beauty, books
-interests: free text, persona-based (e.g. "Loves Gardening", "Loves Cooking")
-
-OUTPUT: Return JSON only. If nothing more needed, return: {"ready": true}
+OUTPUT: JSON only.
 
 SCHEMA:
 {
   "field": string,
-  "question": string (warm, conversational, never clinical),
-  "type": "single_select" | "multi_select" | "text" | "budget" | "date",
-  "options": [{"id": string, "emoji": string, "label": string, "sublabel": string}] | null,
-  "hint": string | null,
-  "isRequired": boolean
+  "question": string,
+  "type": "pills" | "budget" | "multi",
+  "predictedAnswers": [{"id": string, "emoji": string, "label": string, "value": string}],
+  "hint": string | null
 }
 
-EXAMPLES:
-
-Profile: {"shoppingType":"gift","recipient":"mother","occasion":"birthday"}
-Output: {"field":"budget","question":"What\u2019s your budget for this?","type":"budget","options":[{"id":"under_2500","emoji":"","label":"Under Rs. 2,500","sublabel":"Thoughtful \u0026 sweet"},{"id":"under_5k","emoji":"","label":"Under Rs. 5,000","sublabel":"Great everyday gifts"},{"id":"5k_10k","emoji":"","label":"Rs. 5,000 \u2013 10,000","sublabel":"The popular sweet spot"},{"id":"10k_20k","emoji":"","label":"Rs. 10,000 \u2013 20,000","sublabel":"Premium \u0026 memorable"},{"id":"20k_plus","emoji":"","label":"Rs. 20,000+","sublabel":"A truly special gift"}],"hint":"We\u2019ll only show options that fit comfortably.","isRequired":true}
-
-Profile: {"shoppingType":"gift","recipient":"mother","occasion":"birthday","budget":"5000"}
-Output: {"field":"deliveryDate","question":"When do you need it?","type":"single_select","options":[{"id":"today","emoji":"\u26a1","label":"Today","sublabel":"Express delivery"},{"id":"tomorrow","emoji":"\ud83d\udce6","label":"Tomorrow","sublabel":"Standard delivery"},{"id":"this_week","emoji":"\ud83d\udcc5","label":"This Week","sublabel":"Flexible timing"},{"id":"flexible","emoji":"\ud83c\udf3f","label":"No Rush","sublabel":"We\u2019ll find the best option"}],"hint":null,"isRequired":false}
-
-Profile: {"shoppingType":"gift","recipient":"","occasion":"birthday","budget":"5000"}
-Output: {"field":"recipient","question":"Who\u2019s this gift for?","type":"single_select","options":[{"id":"mother","emoji":"\ud83c\udf38","label":"Mother","sublabel":"A gift she\u2019ll treasure"},{"id":"father","emoji":"\ud83c\udfa9","label":"Father","sublabel":"Something he\u2019ll love"},{"id":"partner","emoji":"\ud83d\udc9b","label":"Partner","sublabel":"Show them you care"},{"id":"friend","emoji":"\ud83e\udd1d","label":"Friend","sublabel":"Celebrate your bond"},{"id":"child","emoji":"\ud83c\udf1f","label":"Child","sublabel":"Make their day special"},{"id":"colleague","emoji":"\u2615","label":"Colleague","sublabel":"Professional \u0026 thoughtful"}],"hint":null,"isRequired":true}
-
-Profile: {"shoppingType":"gift","recipient":"mother","occasion":"birthday","budget":"under_5k","deliveryDate":"tomorrow"}
-Output: {"ready": true}
+If ready: {"ready": true}
 `;
+
+function buildBudgetQuestion(profile: Partial<ShoppingProfile>): QuestionResponse {
+  const confidence = computeProfileConfidence(profile);
+  const isGift = profile.shoppingType === "gift";
+
+  return {
+    question: {
+      field: "budget",
+      question: isGift
+        ? "What feels like the right budget for this gift?"
+        : "What budget are you working with?",
+      type: "budget",
+      predictedAnswers: [
+        ...budgetOptions.map((b) => ({
+          id: b.id,
+          emoji: "💰",
+          label: b.label,
+          value: b.id,
+        })),
+        { id: "no_preference", emoji: "🌿", label: "No Preference", value: "no_preference" },
+        { id: "something_else", emoji: "✨", label: "Custom Range", value: "custom" },
+      ],
+      confidence,
+      hint: "We'll only show options that fit comfortably.",
+    },
+    confidence,
+    ready: false,
+  };
+}
+
+function buildPersonaQuestion(
+  field: "gender" | "ageGroup",
+  profile: Partial<ShoppingProfile>
+): QuestionResponse {
+  const confidence = computeProfileConfidence(profile);
+  const base = field === "gender" ? buildGenderQuestion() : buildAgeGroupQuestion();
+
+  return {
+    question: {
+      ...base,
+      confidence,
+      predictedAnswers: [
+        ...base.predictedAnswers,
+        { id: "something_else", emoji: "✨", label: "Something Else", value: "custom" },
+      ],
+    },
+    confidence,
+    ready: false,
+  };
+}
+
+function mergeProfileWithPersona(profile: Partial<ShoppingProfile>): {
+  merged: Partial<ShoppingProfile>;
+  personaPatch: Partial<ShoppingProfile>;
+} {
+  const personaPatch = getAutoPersonaPatch(profile);
+  const merged = { ...profile, ...personaPatch };
+  return { merged, personaPatch };
+}
 
 export async function generateNextQuestion(
   profile: Partial<ShoppingProfile>
-): Promise<NextQuestion | null> {
-  const prompt = `${SYSTEM_PROMPT}\n\nCurrent shopping profile: ${JSON.stringify(profile)}\n\nReturn JSON:`;
-  const result = await generateJSON<NextQuestion | { ready: true }>(prompt);
-  if ("ready" in result && result.ready) return null;
-  return result as NextQuestion;
+): Promise<QuestionResponse> {
+  const { merged, personaPatch } = mergeProfileWithPersona(profile);
+  const confidence = computeProfileConfidence(merged);
+
+  // Persona questions — only when materially valuable, one at a time
+  const personaField = getNextPersonaQuestion(merged);
+  if (personaField) {
+    return {
+      ...buildPersonaQuestion(personaField, merged),
+      personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+    };
+  }
+
+  // Budget is mandatory last — always ask before finishing
+  if (!hasBudget(merged) && isPreBudgetComplete(merged)) {
+    return {
+      ...buildBudgetQuestion(merged),
+      personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+    };
+  }
+
+  if (isReadyForRecommendations(merged)) {
+    return {
+      question: null,
+      confidence,
+      ready: true,
+      personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+    };
+  }
+
+  const persona = buildRecipientPersona(merged);
+  const prompt = `${SYSTEM_PROMPT}\n\nShopping profile: ${JSON.stringify(merged)}\n\nRecipient persona: ${JSON.stringify({ gender: persona.gender, ageGroup: persona.ageGroup, personaConfidence: persona.confidence })}\n\nCurrent confidence: ${confidence}\n\nReturn JSON:`;
+  const result = await generateJSON<DynamicQuestion | { ready: true }>(prompt);
+
+  if ("ready" in result && result.ready) {
+    if (!hasBudget(merged)) {
+      return {
+        ...buildBudgetQuestion(merged),
+        personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+      };
+    }
+    return {
+      question: null,
+      confidence: computeProfileConfidence(merged),
+      ready: true,
+      personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+    };
+  }
+
+  const question = result as DynamicQuestion;
+
+  if (question.field === "budget" && !hasBudget(merged)) {
+    if (isPreBudgetComplete(merged)) {
+      return {
+        ...buildBudgetQuestion(merged),
+        personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+      };
+    }
+  }
+
+  if (!question.predictedAnswers?.some((a) => a.id === "something_else")) {
+    question.predictedAnswers = [
+      ...question.predictedAnswers,
+      { id: "something_else", emoji: "✨", label: "Something Else", value: "custom" },
+    ];
+  }
+
+  return {
+    question: { ...question, confidence },
+    confidence,
+    ready: false,
+    personaPatch: Object.keys(personaPatch).length > 0 ? personaPatch : undefined,
+  };
 }

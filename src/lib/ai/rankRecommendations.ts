@@ -1,13 +1,16 @@
 // server-side only
-import { generateJSON } from "./openRouter";
 import type { ShoppingProfile } from "@/lib/store";
+import { resolveGiftStrategy } from "@/lib/persona/giftStrategyEngine";
+import { classifyGiftType } from "@/lib/persona/heroGiftClassifier";
+import { buildRecipientPersona } from "@/lib/persona/recipientPersona";
 import type { ScoredProduct } from "@/services/commerce/retrievalTypes";
+import { generateExplanations } from "./generateExplanations";
 
 export interface RankedProduct {
   productId: string;
-  matchScore: number; // 0-100
+  matchScore: number;
   reasons: string[];
-  variant: "best_pick" | "most_loved" | "unique_choice" | "other";
+  variant: "best_match" | "most_thoughtful" | "surprise_pick" | "best_value" | "other";
 }
 
 export interface RankingResult {
@@ -41,138 +44,138 @@ export interface ProductInput {
   source?: "kapruka" | "mock";
 }
 
-const SYSTEM_PROMPT = `
-You are Kapi's recommendation ranking engine for Kapruka, Sri Lanka.
-
-You will receive ONLY pre-filtered, relevance-scored products that already passed quality checks.
-Do NOT rank products outside the provided list.
-
-Rank them into:
-1. topPick — the single best match overall (must be the highest relevance fit)
-2. mostLoved — highest rated / most reviewed
-3. uniqueChoice — an unexpected but delightful option
-4. others — remaining in ranked order
-
-Each product includes a relevanceScore from prior scoring. Prefer higher relevanceScore for topPick.
-
-For each product include 2-3 short, warm reasons (max 12 words each).
-
-OUTPUT: Return JSON only.
-
-SCHEMA:
-{
-  "topPick": { "productId": string, "matchScore": number, "reasons": string[], "variant": "best_pick" },
-  "mostLoved": { "productId": string, "matchScore": number, "reasons": string[], "variant": "most_loved" },
-  "uniqueChoice": { "productId": string, "matchScore": number, "reasons": string[], "variant": "unique_choice" },
-  "others": [{ "productId": string, "matchScore": number, "reasons": string[], "variant": "other" }],
-  "reasoning": string,
-  "totalConsidered": number
+function giftTypeOf(product: ScoredProduct): "HERO" | "SUPPORTING" {
+  return product.giftType ?? classifyGiftType(product);
 }
-`;
 
 function buildRankedProduct(
   product: ScoredProduct,
-  variant: RankedProduct["variant"]
+  variant: RankedProduct["variant"],
+  reasons?: string[]
 ): RankedProduct {
   return {
     productId: product.id,
     matchScore: product.relevanceScore,
-    reasons: product.relevanceReasons.length > 0 ? product.relevanceReasons : ["Great match for your request"],
+    reasons: reasons ?? ["A strong match for your gift profile."],
     variant,
   };
 }
 
-function enforceTopPick(ranking: RankingResult, candidates: ScoredProduct[]): RankingResult {
-  if (candidates.length === 0) return ranking;
+function deterministicRanking(
+  candidates: ScoredProduct[],
+  profile: Partial<ShoppingProfile>
+): RankingResult {
+  const persona = buildRecipientPersona(profile);
+  const giftStrategy = resolveGiftStrategy(persona);
 
-  const allowedIds = new Set(candidates.map((p) => p.id));
-  const best = candidates[0];
+  const heroes = candidates.filter((p) => giftTypeOf(p) === "HERO");
+  const supporting = candidates.filter((p) => giftTypeOf(p) === "SUPPORTING");
+  const heroPool = giftStrategy.heroGiftRequired && heroes.length > 0 ? heroes : candidates;
 
-  const topPickValid =
-    ranking.topPick && allowedIds.has(ranking.topPick.productId);
-  const topPickScore = topPickValid
-    ? candidates.find((p) => p.id === ranking.topPick!.productId)?.relevanceScore ?? 0
-    : 0;
+  const sortedHeroes = [...heroPool].sort((a, b) => b.relevanceScore - a.relevanceScore);
+  const topPick = sortedHeroes[0] ? buildRankedProduct(sortedHeroes[0], "best_match") : null;
 
-  if (!topPickValid || topPickScore < best.relevanceScore) {
-    ranking.topPick = buildRankedProduct(best, "best_pick");
-  }
-
-  return ranking;
-}
-
-function deterministicRanking(candidates: ScoredProduct[]): RankingResult {
-  const sorted = [...candidates].sort((a, b) => b.relevanceScore - a.relevanceScore);
-  const topPick = sorted[0] ? buildRankedProduct(sorted[0], "best_pick") : null;
-
-  const byRating = [...candidates].sort(
+  const byRating = [...heroPool].sort(
     (a, b) => (b.rating ?? 0) - (a.rating ?? 0) || b.relevanceScore - a.relevanceScore
   );
   const mostLoved =
     byRating[0] && byRating[0].id !== topPick?.productId
-      ? buildRankedProduct(byRating[0], "most_loved")
+      ? buildRankedProduct(byRating[0], "most_thoughtful")
       : byRating[1]
-        ? buildRankedProduct(byRating[1], "most_loved")
+        ? buildRankedProduct(byRating[1], "most_thoughtful")
         : null;
 
   const used = new Set([topPick?.productId, mostLoved?.productId].filter(Boolean));
-  const uniqueChoice =
-    sorted.find((p) => !used.has(p.id)) != null
-      ? buildRankedProduct(sorted.find((p) => !used.has(p.id))!, "unique_choice")
-      : null;
 
+  const surprisePool = sortedHeroes.filter((p) => !used.has(p.id));
+  const uniqueChoice = surprisePool[0]
+    ? buildRankedProduct(surprisePool[0], "surprise_pick")
+    : null;
   if (uniqueChoice) used.add(uniqueChoice.productId);
 
-  const others = sorted
+  const addOnPool =
+    giftStrategy.supportingGiftAllowed && supporting.length > 0
+      ? [...supporting].sort((a, b) => b.relevanceScore - a.relevanceScore)
+      : sortedHeroes.filter((p) => !used.has(p.id));
+
+  const others = addOnPool
     .filter((p) => !used.has(p.id))
-    .map((p) => buildRankedProduct(p, "other"));
+    .map((p) => buildRankedProduct(p, "best_value"));
 
   return {
     topPick,
     mostLoved,
     uniqueChoice,
     others,
-    reasoning: "Ranked from pre-scored relevant candidates.",
+    reasoning: `Ranked for ${giftStrategy.label} gift experience.`,
     totalConsidered: candidates.length,
   };
+}
+
+function applyExplanations(
+  ranking: RankingResult,
+  explanations: { productId: string; reasons: string[] }[],
+  summary: string
+): RankingResult {
+  const byId = new Map(explanations.map((e) => [e.productId, e.reasons]));
+  const slots: (RankedProduct | null)[] = [
+    ranking.topPick,
+    ranking.mostLoved,
+    ranking.uniqueChoice,
+    ...ranking.others,
+  ];
+
+  for (const slot of slots) {
+    if (!slot) continue;
+    const reasons = byId.get(slot.productId);
+    if (reasons && reasons.length > 0) {
+      slot.reasons = reasons;
+    }
+  }
+
+  if (summary) ranking.reasoning = summary;
+  return ranking;
 }
 
 export async function rankRecommendations(
   profile: Partial<ShoppingProfile>,
   candidates: ScoredProduct[]
-): Promise<RankingResult> {
+): Promise<{ ranking: RankingResult; explanationMs: number }> {
   if (candidates.length === 0) {
     return {
-      topPick: null,
-      mostLoved: null,
-      uniqueChoice: null,
-      others: [],
-      reasoning: "No relevant products passed filtering and scoring.",
-      totalConsidered: 0,
+      ranking: {
+        topPick: null,
+        mostLoved: null,
+        uniqueChoice: null,
+        others: [],
+        reasoning: "No relevant products passed filtering and scoring.",
+        totalConsidered: 0,
+      },
+      explanationMs: 0,
     };
   }
 
-  if (candidates.length === 1) {
-    return deterministicRanking(candidates);
+  const ranking = deterministicRanking(candidates, profile);
+
+  const toExplain: ScoredProduct[] = [];
+  const seen = new Set<string>();
+  for (const slot of [ranking.topPick, ranking.mostLoved, ranking.uniqueChoice, ...ranking.others]) {
+    if (!slot || seen.has(slot.productId)) continue;
+    const product = candidates.find((c) => c.id === slot.productId);
+    if (product) {
+      toExplain.push(product);
+      seen.add(slot.productId);
+    }
   }
 
-  const compact = candidates.map((p) => ({
-    id: p.id,
-    name: p.name,
-    price: p.price,
-    category: p.category,
-    relevanceScore: p.relevanceScore,
-    relevanceReasons: p.relevanceReasons,
-    rating: p.rating,
-    reviewCount: p.reviewCount,
-  }));
-
+  const explainStart = performance.now();
   try {
-    const prompt = `${SYSTEM_PROMPT}\n\nShopping profile: ${JSON.stringify(profile)}\n\nPre-scored products to rank: ${JSON.stringify(compact)}\n\nReturn JSON:`;
-    const ranking = await generateJSON<RankingResult>(prompt);
-    ranking.totalConsidered = candidates.length;
-    return enforceTopPick(ranking, candidates);
+    const { explanations, reasoning } = await generateExplanations(profile, toExplain);
+    applyExplanations(ranking, explanations, reasoning);
   } catch {
-    return deterministicRanking(candidates);
+    // Keep deterministic placeholder reasons
   }
+  const explanationMs = Math.round(performance.now() - explainStart);
+
+  return { ranking, explanationMs };
 }

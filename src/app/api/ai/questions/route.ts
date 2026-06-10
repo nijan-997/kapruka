@@ -12,11 +12,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "profile is required" }, { status: 400 });
     }
 
-    const question = await generateNextQuestion(profile);
+    const result = await generateNextQuestion(profile);
 
     return NextResponse.json({
-      question,
-      ready: question === null,
+      question: result.question,
+      confidence: result.confidence,
+      ready: result.ready,
+      personaPatch: result.personaPatch ?? null,
       ok: true,
     });
   } catch (err) {

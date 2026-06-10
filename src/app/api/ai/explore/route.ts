@@ -1,54 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
 import { aiErrorResponse } from "@/lib/ai/apiError";
+import { generateExploreStrategy } from "@/lib/ai/generateExploreStrategy";
 import { rankRecommendations } from "@/lib/ai/rankRecommendations";
 import { retrieveProducts } from "@/services/commerce/retrieveProducts";
 import type { ShoppingProfile } from "@/lib/store";
-import type { SearchStrategy } from "@/lib/ai/generateSearchQueries";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { profile, strategy } = body as {
+    const { profile, seenProductIds = [], previousQueries = [] } = body as {
       profile: Partial<ShoppingProfile>;
-      strategy?: SearchStrategy;
+      seenProductIds?: string[];
+      previousQueries?: string[];
     };
 
     if (!profile) {
       return NextResponse.json({ error: "profile is required" }, { status: 400 });
     }
 
-    if (!strategy) {
-      return NextResponse.json({ error: "strategy is required" }, { status: 400 });
-    }
-
     const totalStart = performance.now();
-    const retrieval = await retrieveProducts({ profile, strategy });
-    const { ranking, explanationMs } = await rankRecommendations(profile, retrieval.candidates);
+    const strategyStart = performance.now();
+    const strategy = await generateExploreStrategy(profile, previousQueries);
+    const searchStrategyMs = Math.round(performance.now() - strategyStart);
 
-    const rankingMs = explanationMs;
+    const retrieval = await retrieveProducts({
+      profile,
+      strategy,
+      excludeProductIds: seenProductIds,
+    });
+
+    const { ranking, explanationMs } = await rankRecommendations(profile, retrieval.candidates);
     const totalMs = Math.round(performance.now() - totalStart);
 
     const performanceTimings = {
       ...retrieval.debug.performanceMs,
+      searchStrategyMs,
       explanationMs,
-      rankingMs,
+      rankingMs: explanationMs,
       totalMs,
     };
 
     return NextResponse.json({
+      strategy,
       ranking,
-      products: retrieval.allProducts,
       allScoredProducts: retrieval.allScoredProducts,
       retrievalDebug: {
         ...retrieval.debug,
         performanceMs: performanceTimings,
       },
       deterministicScores: retrieval.deterministicScores,
-      giftStrategy: retrieval.giftStrategy,
       performanceTimings,
       ok: true,
     });
   } catch (err) {
-    return aiErrorResponse(err, "Ranking failed");
+    return aiErrorResponse(err, "Explore recommendations failed");
   }
 }

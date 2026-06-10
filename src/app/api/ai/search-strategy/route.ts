@@ -12,9 +12,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "profile is required" }, { status: 400 });
     }
 
+    const start = performance.now();
     const strategy = await generateSearchStrategy(profile);
+    const searchStrategyMs = Math.round(performance.now() - start);
 
-    return NextResponse.json({ strategy, ok: true });
+    return NextResponse.json({ strategy, searchStrategyMs, ok: true });
   } catch (err) {
     return aiErrorResponse(err, "Search strategy generation failed");
   }

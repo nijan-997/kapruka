@@ -4,6 +4,7 @@ import { motion, type Variants } from "framer-motion";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useKapiStore } from "@/lib/store";
+import { getBrowsePool, getHeroProductIds } from "@/lib/recommendationBrowse";
 import { Heart, ShoppingBag, RotateCcw, ArrowLeft, SlidersHorizontal, AlertCircle } from "lucide-react";
 
 const trustChipColors: Record<string, string> = {
@@ -50,30 +51,80 @@ function useRankedCards() {
 }
 
 const BADGE_MAP: Record<string, string> = {
-  best_pick: "🏆 My Top Pick",
-  most_loved: "❤️ Most Loved",
-  unique_choice: "✨ Unique Choice",
-  other: "⭐ Great Match",
+  best_match: "✨ Best Main Gift",
+  best_pick: "✨ Best Main Gift",
+  most_thoughtful: "💖 Most Emotional Choice",
+  most_loved: "💖 Most Emotional Choice",
+  surprise_pick: "💎 Unexpected Surprise",
+  unique_choice: "💎 Unexpected Surprise",
+  best_value: "🎁 Perfect Add-On",
+  other: "🎁 Perfect Add-On",
 };
 
 const TRUST_CHIPS_BY_VARIANT: Record<string, string[]> = {
+  best_match: ["Matches Your Budget", "Available For Delivery", "Matches Recipient"],
   best_pick: ["Matches Your Budget", "Available For Delivery", "Matches Recipient"],
+  most_thoughtful: ["Matches Recipient", "Recommended For Occasion"],
   most_loved: ["Matches Recipient", "Recommended For Occasion"],
+  surprise_pick: ["Matches Your Budget", "Matches Recipient"],
   unique_choice: ["Matches Your Budget", "Matches Recipient"],
+  best_value: ["Matches Your Budget"],
   other: ["Matches Your Budget"],
 };
 
 export default function RecommendationsPage() {
   const router = useRouter();
-  const { profile, ai, reset } = useKapiStore();
+  const {
+    profile,
+    ai,
+    recommendations,
+    reset,
+    loadMoreRecommendations,
+    appendExploreSession,
+    setExploring,
+    getAllPreviousQueries,
+  } = useKapiStore();
   const rankedCards = useRankedCards();
   const hasResults = rankedCards.length > 0;
 
   const recipientLabel = profile.recipientCustom || profile.recipient || "someone special";
   const occasionLabel = profile.occasionCustom || profile.occasion?.replace(/_/g, " ") || "a special occasion";
 
+  const heroIds = getHeroProductIds(ai.ranking);
+  const browsePool = getBrowsePool(recommendations.sessions, heroIds);
+  const displayedBrowse = browsePool.slice(0, recommendations.displayedCount);
+  const hasMoreCached = recommendations.displayedCount < browsePool.length;
+
   const primaryCards = rankedCards.slice(0, 3);
-  const otherCards = rankedCards.slice(3);
+  const otherCards = displayedBrowse.map((item) => ({
+    variant: item.variant,
+    product: item.product,
+    reasons: item.reasons,
+    matchScore: item.matchScore,
+  }));
+
+  const totalRetrieved =
+    recommendations.analytics.totalRetrieved || ai.products.length;
+
+  async function handleExploreDifferentIdeas() {
+    setExploring(true);
+    try {
+      const res = await fetch("/api/ai/explore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          profile,
+          seenProductIds: recommendations.seenProductIds,
+          previousQueries: getAllPreviousQueries(),
+        }),
+      });
+      if (!res.ok) throw new Error("Explore failed");
+      const { allScoredProducts, strategy } = await res.json();
+      appendExploreSession(allScoredProducts ?? [], strategy?.reasoning);
+    } catch {
+      setExploring(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#fafaf7]">
@@ -120,7 +171,7 @@ export default function RecommendationsPage() {
           </p>
           <h1 className="font-display text-2xl md:text-3xl font-semibold text-[#1a1a18] leading-tight">
             {hasResults
-              ? `I found ${ai.products.length} options and these stand out.`
+              ? `I found ${totalRetrieved} options and these stand out.`
               : "I found a few options that stand out."}
           </h1>
           {ai.ranking?.reasoning && (
@@ -140,11 +191,11 @@ export default function RecommendationsPage() {
 
         {/* Primary recommendation cards */}
         <div className="space-y-4">
-          {(hasResults ? primaryCards : [{ variant: "best_pick", product: null, reasons: [], matchScore: 0 },
-            { variant: "most_loved", product: null, reasons: [], matchScore: 0 },
-            { variant: "unique_choice", product: null, reasons: [], matchScore: 0 }]
+          {(hasResults ? primaryCards : [{ variant: "best_match", product: null, reasons: [], matchScore: 0 },
+            { variant: "most_thoughtful", product: null, reasons: [], matchScore: 0 },
+            { variant: "surprise_pick", product: null, reasons: [], matchScore: 0 }]
           ).map((card, i) => {
-            const isHero = card.variant === "best_pick";
+            const isHero = card.variant === "best_match" || card.variant === "best_pick";
             const product = "product" in card ? card.product : null;
 
             return (
@@ -313,6 +364,35 @@ export default function RecommendationsPage() {
                 );
               })}
             </div>
+          </motion.div>
+        )}
+
+        {/* Browse expansion */}
+        {recommendations.sessions.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.8 }}
+            className="mt-8 space-y-3"
+          >
+            {hasMoreCached ? (
+              <button
+                id="recs-load-more"
+                onClick={() => loadMoreRecommendations()}
+                className="w-full py-3.5 rounded-2xl border border-[#e8e5de] bg-white text-[#1a1a18] text-sm font-semibold hover:border-[#a8c5ab] transition-colors"
+              >
+                Show More Matches
+              </button>
+            ) : (
+              <button
+                id="recs-explore"
+                onClick={handleExploreDifferentIdeas}
+                disabled={recommendations.isExploring}
+                className="w-full py-3.5 rounded-2xl border border-[#e8e5de] bg-white text-[#1a1a18] text-sm font-semibold hover:border-[#a8c5ab] transition-colors disabled:opacity-60"
+              >
+                {recommendations.isExploring ? "Finding new ideas…" : "Explore Different Ideas"}
+              </button>
+            )}
           </motion.div>
         )}
 

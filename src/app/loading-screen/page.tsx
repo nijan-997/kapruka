@@ -31,7 +31,7 @@ export default function LoadingPage() {
         });
 
         if (!stratRes.ok) throw new Error("Search strategy failed");
-        const { strategy } = await stratRes.json();
+        const { strategy, searchStrategyMs } = await stratRes.json();
         setSearchStrategy(strategy);
 
         // Step 2-3: Rank recommendations
@@ -45,15 +45,30 @@ export default function LoadingPage() {
         });
 
         if (!rankRes.ok) throw new Error("Ranking failed");
-        const { ranking, products, retrievalDebug, relevanceScores } = await rankRes.json();
-        setRanking(ranking, products, retrievalDebug ?? null, relevanceScores ?? []);
+        const {
+          ranking,
+          products,
+          allScoredProducts,
+          retrievalDebug,
+          deterministicScores,
+          performanceTimings,
+          giftStrategy,
+        } = await rankRes.json();
+        setRanking(
+          ranking,
+          products,
+          retrievalDebug ?? null,
+          deterministicScores ?? [],
+          { ...performanceTimings, searchStrategyMs: searchStrategyMs ?? 0 },
+          allScoredProducts ?? products,
+          giftStrategy ?? null
+        );
 
         // Step 4: Almost ready
         setStep(4);
         setStatusLine(loadingMessages[4]);
         setLoading(false);
 
-        await new Promise((r) => setTimeout(r, 700));
         router.push("/recommendations");
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);

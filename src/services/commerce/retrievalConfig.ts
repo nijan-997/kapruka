@@ -1,6 +1,5 @@
 // Configurable retrieval pipeline settings
 
-/** Keywords that indicate obviously irrelevant products (matched against name, category, tags, description). */
 export const BANNED_KEYWORDS: string[] = [
   "exercise book",
   "activity book",
@@ -26,21 +25,25 @@ export const BANNED_KEYWORDS: string[] = [
   "story book for kids",
 ];
 
-/** Allow products up to this fraction above budget max (e.g. 0.1 = 10% over). */
 export const BUDGET_TOLERANCE_RATIO = 0.1;
 
-/** Minimum relevance score (0-100) for a product to reach ranking. */
-export const MIN_RELEVANCE_SCORE = 60;
+/** Max AI-generated search queries (3 primary + 2 supporting). */
+export const MAX_SEARCH_QUERIES = 5;
 
-/** Target number of AI-generated search queries. */
-export const QUERY_COUNT_MIN = 8;
-export const QUERY_COUNT_MAX = 12;
+/** Parallel MCP search concurrency. */
+export const MCP_CONCURRENCY = 5;
 
-/** Products fetched per search query from Kapruka. */
+/** Stop MCP retrieval once this many unique products are collected. */
+export const EARLY_STOP_PRODUCT_COUNT = 25;
+
+/** Products fetched per MCP query. */
 export const PRODUCTS_PER_QUERY = 8;
 
-/** Max products sent to AI relevance scoring. */
-export const MAX_PRODUCTS_TO_SCORE = 40;
+/** Top products kept after deterministic scoring. */
+export const TOP_CANDIDATE_LIMIT = 10;
 
-/** Max products sent to final recommendation ranking. */
-export const MAX_RANKING_CANDIDATES = 15;
+/** Max products sent to AI for explanation generation. */
+export const MAX_EXPLANATION_PRODUCTS = 4;
+
+/** Minimum deterministic score to be a candidate. */
+export const MIN_DETERMINISTIC_SCORE = 50;

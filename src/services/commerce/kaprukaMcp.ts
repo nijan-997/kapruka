@@ -1,4 +1,8 @@
 import type { ProductInput } from "@/lib/ai/rankRecommendations";
+import {
+  EARLY_STOP_PRODUCT_COUNT,
+  MCP_CONCURRENCY,
+} from "./retrievalConfig";
 
 const DEFAULT_MCP_URL = "https://mcp.kapruka.com/mcp";
 const MCP_PROTOCOL_VERSION = "2024-11-05";
@@ -148,111 +152,60 @@ async function initializeMcpSession(): Promise<string> {
   return sessionId;
 }
 
+/** Reusable MCP session — one per recommendation request. */
+export class KaprukaMcpSession {
+  private sessionId: string | null = null;
+
+  async ensureSession(): Promise<string> {
+    if (!this.sessionId) {
+      this.sessionId = await initializeMcpSession();
+    }
+    return this.sessionId;
+  }
+
+  async callTool<T>(name: string, params: Record<string, unknown>): Promise<T> {
+    const sessionId = await this.ensureSession();
+    const id = requestId++;
+    const { response } = await postMcp<McpToolResult>(
+      {
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: { name, arguments: { params } },
+      },
+      sessionId
+    );
+
+    const result = response.result;
+    if (!result) {
+      throw new Error(`Kapruka MCP returned no result for ${name}`);
+    }
+    if (result.isError) {
+      throw new Error(readToolText(result) || `Kapruka MCP tool failed: ${name}`);
+    }
+
+    const text = result.structuredContent?.result ?? readToolText(result);
+    if (!text) {
+      throw new Error(`Kapruka MCP returned an empty result for ${name}`);
+    }
+    if (text.startsWith("Error:") || text.startsWith("No products found")) {
+      throw new Error(text);
+    }
+
+    return JSON.parse(text) as T;
+  }
+}
+
 async function callKaprukaTool<T>(
   name: string,
   params: Record<string, unknown>
 ): Promise<T> {
-  const sessionId = await initializeMcpSession();
-  const id = requestId++;
-  const { response } = await postMcp<McpToolResult>(
-    {
-      jsonrpc: "2.0",
-      id,
-      method: "tools/call",
-      params: {
-        name,
-        arguments: { params },
-      },
-    },
-    sessionId
-  );
-
-  const result = response.result;
-  if (!result) {
-    throw new Error(`Kapruka MCP returned no result for ${name}`);
-  }
-  if (result.isError) {
-    throw new Error(readToolText(result) || `Kapruka MCP tool failed: ${name}`);
-  }
-
-  const text = result.structuredContent?.result ?? readToolText(result);
-  if (!text) {
-    throw new Error(`Kapruka MCP returned an empty result for ${name}`);
-  }
-  if (text.startsWith("Error:") || text.startsWith("No products found")) {
-    throw new Error(text);
-  }
-
-  return JSON.parse(text) as T;
+  const session = new KaprukaMcpSession();
+  return session.callTool<T>(name, params);
 }
 
 function readToolText(result: McpToolResult) {
   return result.content?.find((item) => item.type === "text")?.text ?? "";
-}
-
-function unique(values: Array<string | null | undefined>) {
-  return Array.from(new Set(values.map((v) => v?.trim()).filter(Boolean))) as string[];
-}
-
-function categoryKeyword(category: string) {
-  const normalized = category.toLowerCase().replace(/[_-]/g, " ");
-  const map: Record<string, string> = {
-    cakes: "cake",
-    flowers: "flowers",
-    electronics: "electronics",
-    fashion: "fashion",
-    lifestyle: "gift",
-    beauty: "skincare",
-    books: "book",
-    food: "hamper",
-    gifts: "gift",
-    home: "home",
-  };
-  return map[normalized] ?? normalized;
-}
-
-function compactSearchTerm(query: string) {
-  const usefulWords = query
-    .toLowerCase()
-    .replace(/[^\w\s]/g, " ")
-    .split(/\s+/)
-    .filter((word) => word.length > 2)
-    .filter(
-      (word) =>
-        ![
-          "for",
-          "and",
-          "with",
-          "under",
-          "over",
-          "best",
-          "gift",
-          "gifts",
-          "sri",
-          "lanka",
-          "delivery",
-          "birthday",
-          "anniversary",
-          "mother",
-          "father",
-          "partner",
-          "friend",
-        ].includes(word)
-    );
-
-  return usefulWords.slice(0, 3).join(" ");
-}
-
-function buildQueryCandidates(options: KaprukaSearchOptions) {
-  const categoryTerms = (options.categories ?? []).map(categoryKeyword);
-  const compactTerms = options.queries.map(compactSearchTerm);
-
-  return unique([
-    ...options.queries,
-    ...compactTerms,
-    ...categoryTerms,
-    "gift",
-  ]).filter((query) => query.length >= 3);
 }
 
 function toProductInput(product: KaprukaSearchProduct): ProductInput | null {
@@ -261,11 +214,14 @@ function toProductInput(product: KaprukaSearchProduct): ProductInput | null {
 
   const category = product.category?.name ?? product.category?.slug ?? "Kapruka";
   const summary = product.summary ?? "";
-  const tags = unique([
+  const tags = [
     category,
     product.category?.slug,
     ...product.name.split(/\s+/).slice(0, 8),
-  ]).map((tag) => tag.toLowerCase());
+  ]
+    .map((tag) => tag?.trim().toLowerCase())
+    .filter((tag): tag is string => Boolean(tag));
+  const uniqueTags = Array.from(new Set(tags));
 
   return {
     id: product.id,
@@ -274,7 +230,7 @@ function toProductInput(product: KaprukaSearchProduct): ProductInput | null {
     currency: product.price?.currency ?? "LKR",
     compareAtPrice: product.compare_at_price?.amount ?? null,
     category,
-    tags,
+    tags: uniqueTags,
     rating: product.rating ?? undefined,
     reviewCount: undefined,
     availableToday: product.in_stock ?? false,
@@ -295,39 +251,62 @@ export interface PerQuerySearchResult {
   products: ProductInput[];
 }
 
+async function searchOneQuery(
+  session: KaprukaMcpSession,
+  query: string,
+  options: KaprukaSearchOptions & { perQueryLimit: number }
+): Promise<PerQuerySearchResult> {
+  try {
+    const response = await session.callTool<KaprukaSearchResponse>("kapruka_search_products", {
+      q: query,
+      limit: options.perQueryLimit,
+      currency: "LKR",
+      min_price: options.priceFilter?.min ?? null,
+      max_price: options.priceFilter?.max ?? null,
+      in_stock_only: true,
+      sort: "relevance",
+      include_stubs: false,
+      response_format: "json",
+    });
+
+    const products: ProductInput[] = [];
+    for (const result of response.results ?? []) {
+      const product = toProductInput(result);
+      if (product) products.push(product);
+    }
+    return { query, products };
+  } catch {
+    return { query, products: [] };
+  }
+}
+
 export async function searchKaprukaProductsPerQuery(
   options: KaprukaSearchOptions & { perQueryLimit?: number }
 ): Promise<PerQuerySearchResult[]> {
   const perQueryLimit = options.perQueryLimit ?? 8;
-  const queryCandidates = buildQueryCandidates(options);
+  const queries = options.queries.filter((q) => q.trim().length >= 3);
+  const session = new KaprukaMcpSession();
   const results: PerQuerySearchResult[] = [];
+  const seenIds = new Set<string>();
 
-  for (const q of queryCandidates) {
-    try {
-      const response = await callKaprukaTool<KaprukaSearchResponse>(
-        "kapruka_search_products",
-        {
-          q,
-          limit: perQueryLimit,
-          currency: "LKR",
-          min_price: options.priceFilter?.min ?? null,
-          max_price: options.priceFilter?.max ?? null,
-          in_stock_only: true,
-          sort: "relevance",
-          include_stubs: false,
-          response_format: "json",
+  for (let i = 0; i < queries.length; i += MCP_CONCURRENCY) {
+    if (seenIds.size >= EARLY_STOP_PRODUCT_COUNT) break;
+
+    const chunk = queries.slice(i, i + MCP_CONCURRENCY);
+    const settled = await Promise.allSettled(
+      chunk.map((q) => searchOneQuery(session, q, { ...options, perQueryLimit }))
+    );
+
+    for (const outcome of settled) {
+      if (outcome.status === "fulfilled") {
+        results.push(outcome.value);
+        for (const product of outcome.value.products) {
+          seenIds.add(product.id);
         }
-      );
-
-      const products: ProductInput[] = [];
-      for (const result of response.results ?? []) {
-        const product = toProductInput(result);
-        if (product) products.push(product);
       }
-      results.push({ query: q, products });
-    } catch {
-      results.push({ query: q, products: [] });
     }
+
+    if (seenIds.size >= EARLY_STOP_PRODUCT_COUNT) break;
   }
 
   return results;

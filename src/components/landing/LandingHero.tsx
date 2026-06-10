@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useKapiStore } from "@/lib/store";
 import { useVoiceInput } from "@/components/shared/useVoiceInput";
 import { nlExamples } from "@/lib/data";
+import { isReadyForRecommendations } from "@/lib/confidence";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -64,13 +65,19 @@ export function LandingHero() {
         }
         const { intent, profilePatch } = data;
 
-        // Update the store with extracted intent
         setIntent(intent);
-        updateProfile({ ...profilePatch, naturalLanguageQuery: trimmed });
+        const merged = { ...profilePatch, naturalLanguageQuery: trimmed };
+        updateProfile(merged);
         setLoading(false);
 
-        // Navigate to loading screen to run full pipeline
-        router.push("/loading-screen");
+        const fullProfile = { ...useKapiStore.getState().profile };
+        if (isReadyForRecommendations(fullProfile)) {
+          router.push("/loading-screen");
+        } else if (fullProfile.shoppingType === "myself") {
+          router.push("/journey/myself");
+        } else {
+          router.push("/journey/gift");
+        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Something went wrong";
         setExtractError(msg);
@@ -118,10 +125,10 @@ export function LandingHero() {
         </div>
 
         <h1 className="font-display text-4xl md:text-5xl lg:text-[3.5rem] font-semibold text-[#1a1a18] leading-[1.15] text-balance">
-          Find the perfect gift or product in under 2 minutes.
+          Not sure what to buy? We&apos;ll help you find the right choice.
         </h1>
         <p className="mt-4 text-lg text-[#6b6b63] leading-relaxed max-w-lg mx-auto text-balance">
-          Tell us what you&apos;re looking for and we&apos;ll help you find the best option.
+          Tell us what you&apos;re looking for — confidently, in under 2 minutes.
         </p>
       </motion.div>
 

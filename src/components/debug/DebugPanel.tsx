@@ -3,6 +3,11 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useKapiStore } from "@/lib/store";
+import {
+  buildRecipientPersona,
+  personaAgeGroupLabel,
+  personaGenderLabel,
+} from "@/lib/persona/recipientPersona";
 import { Bug, ChevronDown, ChevronUp, X } from "lucide-react";
 
 const isDebug = process.env.NEXT_PUBLIC_DEBUG_MODE === "true";
@@ -53,7 +58,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export function DebugPanel() {
   const [open, setOpen] = useState(false);
-  const { profile, ai } = useKapiStore();
+  const { profile, ai, recommendations } = useKapiStore();
+  const persona = buildRecipientPersona(profile);
 
   if (!isDebug) return null;
 
@@ -125,10 +131,42 @@ export function DebugPanel() {
                   </div>
                 )}
 
+                {/* Recipient Persona */}
+                <Section title="Recipient Persona">
+                  {profile.shoppingType === "gift" ? (
+                    <>
+                      <Row
+                        label="Persona"
+                        value={{
+                          recipient: persona.recipient || profile.recipientCustom || "—",
+                          gender: persona.gender
+                            ? personaGenderLabel(persona.gender)
+                            : "—",
+                          ageGroup: persona.ageGroup
+                            ? personaAgeGroupLabel(persona.ageGroup)
+                            : "—",
+                          relationshipStrength: persona.relationshipStrength,
+                          confidence: persona.confidence,
+                        }}
+                      />
+                      <Row label="Gender Confidence" value={`${persona.genderConfidence}%`} />
+                      <Row label="Age Group Confidence" value={`${persona.ageGroupConfidence}%`} />
+                      <Row label="Gender Inferred" value={persona.genderInferred ? "Yes" : "No"} />
+                      <Row label="Age Inferred" value={persona.ageGroupInferred ? "Yes" : "No"} />
+                      <Row label="Profile Gender" value={profile.gender || "—"} />
+                      <Row label="Profile Age Group" value={profile.ageGroup || "—"} />
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">Persona applies to gift mode only.</p>
+                  )}
+                </Section>
+
                 {/* Shopping Profile */}
                 <Section title="Shopping Profile">
                   <Row label="Type" value={profile.shoppingType} />
                   <Row label="Recipient" value={profile.recipient || profile.recipientCustom} />
+                  <Row label="Gender" value={profile.gender} />
+                  <Row label="Age Group" value={profile.ageGroup} />
                   <Row label="Occasion" value={profile.occasion || profile.occasionCustom} />
                   <Row label="Budget" value={profile.budget} />
                   <Row label="Budget Range" value={`${profile.budgetMin ?? "—"} – ${profile.budgetMax ?? "—"}`} />
@@ -137,7 +175,9 @@ export function DebugPanel() {
                   <Row label="Category" value={profile.category} />
                   <Row label="Language" value={profile.language} />
                   <Row label="NL Query" value={profile.naturalLanguageQuery} />
-                  <Row label="Step" value={profile.step} />
+                  <Row label="Emotional Goal" value={profile.emotionalGoal} />
+                  <Row label="Goal" value={profile.goal} />
+                  <Row label="Priority" value={profile.priority} />
                 </Section>
 
                 {/* Extracted Intent */}
@@ -180,10 +220,44 @@ export function DebugPanel() {
                       <Row label="Field" value={ai.nextQuestion.field} />
                       <Row label="Question" value={ai.nextQuestion.question} />
                       <Row label="Type" value={ai.nextQuestion.type} />
-                      <Row label="Required" value={String(ai.nextQuestion.isRequired)} />
+                      <Row label="Confidence" value={`${ai.nextQuestion.confidence}%`} />
+                      <Row
+                        label="Pills"
+                        value={ai.nextQuestion.predictedAnswers?.map((a) => a.label)}
+                      />
                     </>
                   ) : (
                     <p className="text-xs text-[#9b9b90] py-2">No question generated yet.</p>
+                  )}
+                </Section>
+
+                {/* Gift Strategy */}
+                <Section title="Gift Strategy">
+                  {ai.giftStrategy || ai.retrievalDebug?.giftStrategy ? (
+                    <>
+                      <Row
+                        label="Strategy"
+                        value={ai.giftStrategy?.strategy ?? ai.retrievalDebug?.giftStrategy}
+                      />
+                      <Row
+                        label="Label"
+                        value={ai.giftStrategy?.label ?? ai.retrievalDebug?.giftStrategyLabel}
+                      />
+                      <Row
+                        label="Hero Required"
+                        value={ai.giftStrategy?.heroGiftRequired ?? "—"}
+                      />
+                      <Row
+                        label="Supporting Allowed"
+                        value={ai.giftStrategy?.supportingGiftAllowed ?? "—"}
+                      />
+                      <Row
+                        label="Emotional Priority"
+                        value={ai.giftStrategy?.emotionalPriority ?? "—"}
+                      />
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">No gift strategy yet.</p>
                   )}
                 </Section>
 
@@ -191,7 +265,9 @@ export function DebugPanel() {
                 <Section title="Search Strategy">
                   {ai.searchStrategy ? (
                     <>
-                      <Row label="Queries" value={ai.searchStrategy.queries} />
+                      <Row label="Hero Queries" value={ai.searchStrategy.heroQueries} />
+                      <Row label="Supporting Queries" value={ai.searchStrategy.supportingQueries} />
+                      <Row label="All Queries" value={ai.searchStrategy.queries} />
                       <Row label="Categories" value={ai.searchStrategy.categories} />
                       <Row label="Price Filter" value={ai.searchStrategy.priceFilter} />
                       <Row label="Sort By" value={ai.searchStrategy.sortBy} />
@@ -218,6 +294,17 @@ export function DebugPanel() {
                       <Row label="Filtered Count" value={ai.retrievalDebug.filteredCount} />
                       <Row label="Rejected Count" value={ai.retrievalDebug.rejectedCount} />
                       <Row label="Final Candidates" value={ai.retrievalDebug.finalCandidateCount} />
+                      <Row label="Hero Gift Count" value={ai.retrievalDebug.heroGiftCount} />
+                      <Row label="Supporting Gift Count" value={ai.retrievalDebug.supportingGiftCount} />
+                      <Row label="Early Stop" value={ai.retrievalDebug.earlyStopTriggered ? "Yes" : "No"} />
+                      {ai.retrievalDebug.compatibilityRejections?.length > 0 && (
+                        <Row
+                          label="Compatibility Rejections"
+                          value={ai.retrievalDebug.compatibilityRejections.map(
+                            (r) => `${r.product.name} — ${r.reason}`
+                          )}
+                        />
+                      )}
                       {ai.retrievalDebug.keywordRejections.length > 0 && (
                         <Row
                           label="Keyword Rejections"
@@ -240,11 +327,29 @@ export function DebugPanel() {
                   )}
                 </Section>
 
-                {/* Relevance Scores */}
-                <Section title="Relevance Scores">
-                  {ai.relevanceScores.length > 0 ? (
+                {/* Performance Timings */}
+                <Section title="Performance Timings">
+                  {ai.performanceTimings ? (
+                    <>
+                      <Row label="Search Strategy" value={`${ai.performanceTimings.searchStrategyMs ?? "—"} ms`} />
+                      <Row label="MCP Retrieval" value={`${ai.performanceTimings.mcpRetrievalMs} ms`} />
+                      <Row label="Merge" value={`${ai.performanceTimings.mergeMs} ms`} />
+                      <Row label="Deduplication" value={`${ai.performanceTimings.deduplicationMs} ms`} />
+                      <Row label="Filtering" value={`${ai.performanceTimings.filteringMs} ms`} />
+                      <Row label="Scoring" value={`${ai.performanceTimings.scoringMs} ms`} />
+                      <Row label="Explanation Generation" value={`${ai.performanceTimings.explanationMs ?? "—"} ms`} />
+                      <Row label="Total" value={`${ai.performanceTimings.totalMs ?? "—"} ms`} />
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">No timing data yet.</p>
+                  )}
+                </Section>
+
+                {/* Deterministic Scores */}
+                <Section title="Deterministic Scores">
+                  {ai.deterministicScores.length > 0 ? (
                     <div className="space-y-2 py-1">
-                      {ai.relevanceScores.map((s) => {
+                      {ai.deterministicScores.map((s) => {
                         const product = ai.products.find((p) => p.id === s.productId);
                         const name =
                           product?.name ??
@@ -256,24 +361,27 @@ export function DebugPanel() {
                           <div
                             key={s.productId}
                             className={`text-xs py-1.5 px-2 rounded-lg border ${
-                              s.rejected
+                              !s.accepted
                                 ? "bg-red-50 border-red-100 text-red-700"
                                 : "bg-green-50 border-green-100 text-green-800"
                             }`}
                           >
                             <div className="font-medium truncate">{name}</div>
                             <div className="mt-0.5">
-                              Score: {s.score} · {s.rejected ? "Rejected" : "Accepted"}
+                              Score: {s.score} · {s.accepted ? "Accepted" : "Rejected"}
+                              {"giftType" in s && s.giftType ? ` · ${s.giftType}` : ""}
                             </div>
-                            {s.reasons.length > 0 && (
-                              <div className="mt-0.5 text-[10px] opacity-80">{s.reasons.join(" · ")}</div>
-                            )}
+                            <div className="mt-0.5 text-[10px] opacity-80">
+                              {Object.entries(s.breakdown)
+                                .map(([k, v]) => `${k}: ${v}`)
+                                .join(" · ")}
+                            </div>
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <p className="text-xs text-[#9b9b90] py-2">No relevance scores yet.</p>
+                    <p className="text-xs text-[#9b9b90] py-2">No scores yet.</p>
                   )}
                 </Section>
 
@@ -292,6 +400,32 @@ export function DebugPanel() {
                     </>
                   ) : (
                     <p className="text-xs text-[#9b9b90] py-2">No recommendations yet.</p>
+                  )}
+                </Section>
+
+                {/* Browse Expansion */}
+                <Section title="Browse Expansion">
+                  {recommendations.sessions.length > 0 ? (
+                    <>
+                      <Row label="Sessions" value={recommendations.sessions.length} />
+                      <Row label="Page Size" value={recommendations.pageSize} />
+                      <Row label="Displayed Count" value={recommendations.displayedCount} />
+                      <Row label="Seen Product IDs" value={recommendations.seenProductIds.length} />
+                      <Row label="Total Retrieved" value={recommendations.analytics.totalRetrieved} />
+                      <Row label="Total Displayed" value={recommendations.analytics.totalDisplayed} />
+                      <Row label="Remaining Count" value={recommendations.analytics.remainingCount} />
+                      <Row label="Load More Clicks" value={recommendations.analytics.loadMoreClicks} />
+                      <Row
+                        label="Explore Clicks"
+                        value={recommendations.analytics.exploreDifferentIdeasClicks}
+                      />
+                      <Row
+                        label="Session Types"
+                        value={recommendations.sessions.map((s) => `${s.type} (${s.allRecommendations.length})`)}
+                      />
+                    </>
+                  ) : (
+                    <p className="text-xs text-[#9b9b90] py-2">No browse session yet.</p>
                   )}
                 </Section>
 

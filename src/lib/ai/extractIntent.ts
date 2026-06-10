@@ -78,16 +78,23 @@ export async function extractIntent(message: string): Promise<ExtractedIntent> {
 }
 
 export function intentToProfile(intent: ExtractedIntent): Partial<ShoppingProfile> {
+  const shoppingType =
+    intent.shoppingType === "inspire" ? "gift" : intent.shoppingType || "";
+
   return {
-    shoppingType: intent.shoppingType || "",
+    shoppingType,
     recipient: intent.recipient || "",
+    relationship: intent.recipient || "",
     occasion: intent.occasion || "",
+    emotionalGoal: intent.interests?.[0] ?? "",
     budget: intent.budget ? String(intent.budget) : "",
     budgetMin: intent.budgetMin,
     budgetMax: intent.budgetMax,
     deliveryDate: intent.deliveryDate || "",
+    urgency: intent.deliveryDate || "",
     interests: intent.interests || [],
     category: intent.category || "",
+    goal: intent.category || "",
     language: intent.language || "english",
   };
 }
