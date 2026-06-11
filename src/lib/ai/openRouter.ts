@@ -1,7 +1,5 @@
 // OpenRouter client — server-side only, never import in client components
 const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
-const DEFAULT_MODEL = "nex-agi/nex-n2-pro-free";
-const FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324";
 const REQUEST_TIMEOUT_MS = 60_000;
 const MAX_RETRIES = 2;
 
@@ -15,6 +13,10 @@ function getApiKey(): string {
 
 function getSiteUrl(): string {
   return process.env.OPENROUTER_SITE_URL ?? "http://localhost:3000";
+}
+
+function getModel(): string {
+  return process.env.OPENROUTER_MODEL ?? "google/gemini-2.5-flash";
 }
 
 function sleep(ms: number): Promise<void> {
@@ -58,10 +60,10 @@ function extractMessageContent(json: unknown): string | null {
 
 async function requestOpenRouter(
   prompt: string,
-  model = DEFAULT_MODEL,
   attempt = 0,
   useJsonMode = true
 ): Promise<string> {
+  const model = getModel();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
@@ -96,18 +98,14 @@ async function requestOpenRouter(
       const body = await response.text();
       const errorMessage = `OpenRouter request failed (${response.status}): ${body.slice(0, 400)}`;
 
-      // Some models reject json_object mode — retry without it
+      // Gemini rejects json_object mode — retry without it
       if (useJsonMode && response.status === 400) {
-        return requestOpenRouter(prompt, model, attempt, false);
-      }
-
-      if (model === DEFAULT_MODEL && isRetryableStatus(response.status)) {
-        return requestOpenRouter(prompt, FALLBACK_MODEL, 0, useJsonMode);
+        return requestOpenRouter(prompt, attempt, false);
       }
 
       if (attempt < MAX_RETRIES && isRetryableStatus(response.status)) {
         await sleep(500 * (attempt + 1));
-        return requestOpenRouter(prompt, model, attempt + 1, useJsonMode);
+        return requestOpenRouter(prompt, attempt + 1, useJsonMode);
       }
 
       throw new Error(errorMessage);
@@ -117,31 +115,13 @@ async function requestOpenRouter(
     const content = extractMessageContent(json);
     if (!content) {
       const preview = JSON.stringify(json).slice(0, 400);
-      if (model === DEFAULT_MODEL) {
-        return requestOpenRouter(prompt, FALLBACK_MODEL, 0, useJsonMode);
-      }
       throw new Error(`OpenRouter returned unexpected response: ${preview}`);
     }
 
     return content;
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
-      if (model === DEFAULT_MODEL) {
-        return requestOpenRouter(prompt, FALLBACK_MODEL, 0, useJsonMode);
-      }
       throw new Error("OpenRouter request timed out");
-    }
-
-    if (
-      model === DEFAULT_MODEL &&
-      error instanceof Error &&
-      !error.message.includes("Missing OPENROUTER_API_KEY")
-    ) {
-      try {
-        return await requestOpenRouter(prompt, FALLBACK_MODEL, 0, useJsonMode);
-      } catch {
-        throw error;
-      }
     }
 
     throw error;
@@ -173,17 +153,6 @@ function parseJSON<T>(text: string): T {
 }
 
 export async function generateJSON<T>(prompt: string): Promise<T> {
-  const text = await requestOpenRouter(prompt, DEFAULT_MODEL);
-  try {
-    return parseJSON<T>(text);
-  } catch (error) {
-    if (!(error instanceof Error)) throw error;
-
-    const fallbackText = await requestOpenRouter(prompt, FALLBACK_MODEL);
-    try {
-      return parseJSON<T>(fallbackText);
-    } catch {
-      throw new Error(`${error.message}; fallback result: ${fallbackText.slice(0, 200)}`);
-    }
-  }
+  const text = await requestOpenRouter(prompt);
+  return parseJSON<T>(text);
 }
